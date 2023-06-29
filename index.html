@@ -1,0 +1,247 @@
+<!doctype html>
+<html>
+  <head>
+    <script src="https://cdn.jsdelivr.net/pyodide/v0.22.1/full/pyodide.js"></script>
+<!--       <script src="pyodide-kernel.js"></script> -->
+  </head>
+
+  <body>
+    <p>
+      click the buttons from left to right. - open browser console
+    </p>
+      
+
+    <p>
+      load test <select id="test_select" size="1" onchange="load_test()"><option>----------</option></select>
+    </p>
+    <textarea id="code"  rows="20" style="width: 46%;">print(([1, 2,]+[ 3, 4, 5]))</textarea >
+  
+    <textarea id="output" style="width: 46%;" rows="20" disabled ></textarea>
+      <br>
+    <button onclick="evaluatePython()">Run PyOdide</button>    <button onclick="clear_output()">Clear</button><br>
+    <button onclick="mk_pyc()">mk pyc</button>
+    <button onclick="mk_js() ">mk js from pyc</button>
+    <button onclick="eval_js()">eval js</button>
+    <button onclick="code0();output.scrollTop = output.scrollHeight">run js (qdpython)</button><br>
+      <button onclick="mk_pyc();mk_js();eval_js()"> 'transpile'</button>
+       <button onclick="clear_output();code0();output.scrollTop = output.scrollHeight">clear and run qdpython</button><br>
+      
+
+      
+
+
+    <script>
+// let pyodide = await pyodideReadyPromise;
+async function load_test(){
+    let pyodide = await pyodideReadyPromise;
+
+    pyodide.runPython(`
+ts= js.document.getElementById('test_select')
+code_area= js.document.getElementById('code')
+print(ts.selectedIndex, dir(ts.options),ts.value)
+fname = ts.value
+
+with open(fname) as f:
+    code_area.value=''.join(f.readlines())
+
+`)
+}
+    
+function clear_output(){ 
+    document.getElementById('output').value=''
+}
+ 
+    
+px = `
+import js
+import py_compile
+import time as pytime
+output_area = js.document.getElementById('output')
+def print(*args,sep=' ',end='\\n'):
+    
+    for a in args:
+        output_area.value += str(a) + sep
+    output_area.value += end
+
+def time():
+    return pytime.time()
+`
+
+
+getqd = `
+import sys
+import os
+from glob import glob
+from pyodide.http import pyfetch
+
+if not os.path.exists('ops'):
+    os.mkdir('ops')
+if not os.path.exists('js'):
+    os.mkdir('js')
+
+if not os.path.exists('test'):
+    os.mkdir('test')
+
+async def getfile(fname):
+    print(fname)
+    response = await pyfetch("http://localhost:8000/"+fname)
+    x  = await response.string()
+    with open(fname,'w') as f:
+        f.write(x)
+        
+async def getfiles():    
+    for f in ['flow.py', 'co_helper.py', 'stack.py', 't.py', 'func_helper.py', 'ops/load_store.py', 'ops/unpack.py',
+            'ops/dup_is_format_contains.py', 'ops/call_get_return.py', 'ops/build_list_map_dict.py', 'ops/raise_reraise.py', 
+            'ops/compare_binary_inplace.py', 'ops/__init__.py', 'js/print_str_len.js', 'js/hashmaker.js', 'js/dict.js', 
+            'js/range.js', 'js/is_op.js', 'js/add_mul_sub_div.js', 'js/call_function.js', 'js/tuple.js', 'js/enumerate.js','js/time.js', 
+            'js/bool.js', 'js/list.js', 'js/class.js', 'x.js', 'exception.js',
+            'test/test_for.py',
+             'test/test_is.py',
+             'test/test_recursive_func.py',
+             'test/test_class_str.py',
+             'test/test_super.py']:
+        await getfile(f)
+        
+await getfiles()
+
+ts= js.document.getElementById('test_select')
+for f in glob('test/*.py'):
+  option=js.document.createElement("option");
+  option.text = f;
+  ts.add(option);
+`
+
+initjs = `
+import pyodide 
+pyodide.code.run_js('var js = {}')
+pyodide.code.run_js('js.ReferenceError =ReferenceError')
+pyodide.code.run_js('js.Error =Error')
+
+pyodide.code.run_js('function throwX(x){throw x}')
+pyodide.code.run_js('var None = null')
+pyodide.code.run_js('var __name__ = "__main__"  ')   
+pyodide.code.run_js('var sys = {"version":"QDPython 0.0.3.10 "} ')   
+
+for fname in glob('js/*.js') + [ 'exception.js']:
+    with open(fname) as f:
+        pyodide.code.run_js('\\n'.join(f.readlines()))
+
+
+
+`
+
+
+             
+    
+document.getElementById('code').addEventListener('keydown', function(e) {
+  if (e.key == 'Tab') {
+    e.preventDefault();
+    var start = this.selectionStart;
+    var end = this.selectionEnd;
+
+    // set textarea value to: text before caret + tab + text after caret
+    this.value = this.value.substring(0, start) +
+      "    " + this.value.substring(end);
+
+    // put caret at right position again
+    this.selectionStart =
+      this.selectionEnd = start + 4;
+  }
+});
+        
+const output = document.getElementById("output");
+const code = document.getElementById("code");
+
+async function mk_pyc(){
+    let pyodide = await pyodideReadyPromise;
+
+    output.value += "save code.\n";
+    pyodide.runPython(`
+import os
+code_area = js.document.getElementById('code')
+
+with open('mycode.py','w') as f:
+    f.write(code_area.value)
+`);
+
+    output.value += "compile code.\n";
+    pyodide.runPython(`
+import py_compile
+print('py_compile.compile says:', py_compile.compile('mycode.py') )
+`);
+            
+}
+async function mk_js(){
+    let pyodide = await pyodideReadyPromise;
+
+
+    output.value += "load codeobject from __pycache__/mycode.cpython-310.pyc\n";
+    pyodide.runPython(`
+import marshal
+
+with open('__pycache__/mycode.cpython-310.pyc', 'rb') as f:
+    f.seek(16)
+    co = marshal.load(f)
+`);
+    output.value += "transpile... save mycode.js";
+    pyodide.runPython(`
+from func_helper import code_2_num
+
+import stack 
+import func_helper
+import dis
+code_2_num.clear()
+
+R,xin,_= stack.co2js(co, debug =False)
+R2 = [r for i,r in enumerate(R) if r[0] != '/']
+print('\\n'.join(R2))
+with open('mycode.js','w') as f:
+    f.write('\\n'.join(R2))
+`);
+            
+}
+async function eval_js(){
+    let pyodide = await pyodideReadyPromise;
+    output.value +=  "run pyodide.code.run_js( mycode ) \n";
+    pyodide.runPython(`
+import pyodide 
+pyodide.code.run_js('\\n'.join(R2))
+ 
+`);
+          
+}
+    
+     
+output.value = "Initializing...\n";
+// init Pyodide
+async function main() {
+    let pyodide = await loadPyodide();
+    output.value += "Ready!\n";
+    
+    output.value += "override print.\n";
+    pyodide.runPython(px);
+    
+    output.value += "get QDPython from localhost:8000.\n";
+    await pyodide.runPythonAsync(getqd);
+    
+    output.value += "init js.\n";
+    pyodide.runPython(initjs);
+    
+    return pyodide;
+}
+
+let pyodideReadyPromise = main();
+
+async function evaluatePython() {
+    let pyodide = await pyodideReadyPromise;
+    try { 
+        await pyodide.runPythonAsync(code.value);
+        output.scrollTop = output.scrollHeight  
+      
+    } catch (err) {
+        output.value += err
+    }
+}
+</script>
+  </body>
+</html>
